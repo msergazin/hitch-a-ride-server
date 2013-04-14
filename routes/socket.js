@@ -28,7 +28,7 @@ var checkMatches = function () {
 
       // a person cannot give themself a ride
       if (id(driver.socket) === id(rider.socket)) {
-        return;
+        //return;
       }
 
       canHitchRide({
