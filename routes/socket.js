@@ -12,13 +12,26 @@ var drivers = {};
 // map id(socket) -> [ {trip} , {trip} , ... ]
 var trips = {};
 
+// google account id -> account data (reliability, etc.)
+var accounts = {};
+
+// account -> socket
+var sockets = {};
+
+var crypto = require('crypto');
+var sha1 = function (str) {
+  var shasum = crypto.createHash('sha1');
+  shasum.update(str);
+  return shasum.digest('hex');
+};
 
 var canHitchRide = require('../lib/can-hitch-ride');
+var reverseGeocode = require('../lib/google-maps').reverseGeocode;
 
 var key = function (trip) {
-  return trip.from.toString() + ':' +
+  return sha1(trip.from.toString() + ':' +
     trip.to.toString() + ':' +
-    id(trip.socket);
+    id(trip.socket));
 };
 
 var checkMatches = function () {
@@ -82,12 +95,21 @@ module.exports = function (socket) {
       to: data.to,
       type: 'ride'
     };
+    newTrip.id = key(newTrip);
 
     riders[key(newTrip)] = newTrip;
     addTrip(newTrip);
 
     fn();
     checkMatches();
+  });
+
+  socket.on('send:profile', function (id, fn) {
+    if (profile[id]) {
+      fn(profile[id]);
+    } else {
+      fn(false);
+    }
   });
 
   socket.on('send:driver:trip', function (data, fn) {
@@ -97,6 +119,7 @@ module.exports = function (socket) {
       to: data.to,
       type: 'drive'
     };
+    newTrip.id = key(newTrip);
 
     drivers[key(newTrip)] = newTrip;
     addTrip(newTrip);
@@ -105,22 +128,23 @@ module.exports = function (socket) {
     checkMatches();
   });
 
+  socket.on('reverse:geocode', reverseGeocode);
+
   socket.on('get:trips', function (data, fn) {
     var myTrips = trips[id(socket)] || [];
     fn(myTrips.map(function (trip) {
       return {
         from: trip.from,
         to: trip.to,
-        type: trip.type
+        type: trip.type,
+        id: trip.id
       };
     }));
   });
 
   socket.on('get:trip:info', function (data, fn) {
     var trip = _.find(trips[id(socket)], function (trip) {
-      return trip.from === data.from &&
-        trip.to === data.to &&
-        trip.type === data.type;
+      return trip.id === data.id;
     });
 
     if (trip) {
@@ -128,7 +152,8 @@ module.exports = function (socket) {
         from: trip.from,
         to: trip.to,
         type: trip.type,
-        route: trip.route
+        route: trip.route,
+        id: trip.id
       };
 
       if (trip.match) {
